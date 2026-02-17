@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { doctors } from "@/data/mock";
+import { useState, useEffect } from "react";
+// import { doctors } from "@/data/mock"; // Using API now
+import { userApi, appointmentApi } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -9,15 +10,52 @@ import { Badge } from "@/components/ui/Badge";
 import { Calendar, Clock, MapPin, Star } from "lucide-react";
 
 export default function AppointmentsPage() {
-  const [selectedDoctor, setSelectedDoctor] = useState<string | null>(null);
+  const [doctors, setDoctors] = useState<any[]>([]);
+  const [selectedDoctor, setSelectedDoctor] = useState<number | null>(null);
   const [date, setDate] = useState("");
   const [booked, setBooked] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const handleBook = () => {
+  useEffect(() => {
+    async function fetchDoctors() {
+      try {
+        const { data } = await userApi.getDoctors();
+        // Enrich data with mock fields for UI if missing
+        const enrichedDoctors = data.map((d: any) => ({
+          ...d,
+          image: d.image || "https://randomuser.me/api/portraits/men/32.jpg", // Fallback
+          rating: d.rating || 4.5,
+          hospital: d.hospital || "City Hospital",
+          availability: d.availability || ["Mon", "Tue", "Wed"],
+        }));
+        setDoctors(enrichedDoctors);
+      } catch (err) {
+        console.error("Failed to fetch doctors", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchDoctors();
+  }, []);
+
+  const handleBook = async () => {
     if (!selectedDoctor || !date) return;
-    setBooked(true);
-    setTimeout(() => setBooked(false), 3000);
+    try {
+      await appointmentApi.book({
+        doctorId: selectedDoctor,
+        dateTime: new Date(date).toISOString(), // send ISO string
+        notes: "Regular checkup",
+      });
+      setBooked(true);
+      setTimeout(() => setBooked(false), 3000);
+    } catch (err) {
+      console.error("Booking failed", err);
+      setError("Failed to book appointment. Please try again.");
+    }
   };
+
+  if (loading) return <div>Loading doctors...</div>;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -31,6 +69,8 @@ export default function AppointmentsPage() {
           </p>
         </div>
       </div>
+
+      {error && <div className="text-red-500">{error}</div>}
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {doctors.map((doctor) => (
@@ -58,7 +98,7 @@ export default function AppointmentsPage() {
               </div>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />{" "}
-                {doctor.rating} ({doctor.experience} years exp)
+                {doctor.rating} ({doctor.experience || 5} years exp)
               </div>
 
               <div className="pt-2">
@@ -66,7 +106,7 @@ export default function AppointmentsPage() {
                   Available On
                 </div>
                 <div className="flex gap-2 flex-wrap">
-                  {doctor.availability.map((day) => (
+                  {doctor.availability.map((day: string) => (
                     <Badge key={day} variant="secondary" className="text-xs">
                       {day}
                     </Badge>

@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
-  currentUser,
-  appointments,
+  appointments as mockAppointments,
   recentPredictions,
   medicines,
 } from "@/data/mock";
@@ -13,22 +12,43 @@ import { Badge } from "@/components/ui/Badge";
 import Link from "next/link";
 import { Activity, Calendar, Pill, Video, Phone } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { userApi } from "@/lib/api";
 
 export default function PatientDashboard() {
   const router = useRouter();
-  const nextAppointment = appointments.find((a) => a.status === "upcoming");
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [incomingCall, setIncomingCall] = useState(false);
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const { data } = await userApi.getProfile();
+        setUser(data);
+      } catch (err) {
+        console.error("Failed to fetch profile", err);
+        // Fallback to mock user if API fails (for resilience in demo)
+        setUser({ name: "Demo User" });
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
+
+    // Simulate incoming call
+    const timer = setTimeout(() => {
+      setIncomingCall(true);
+    }, 5000); // 5s delay
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  const nextAppointment = mockAppointments.find((a) => a.status === "upcoming");
   const activeMedicines = medicines.filter((m) => m.status === "active");
   const latestPrediction = recentPredictions[0];
 
-  const [incomingCall, setIncomingCall] = useState(false);
-
-  // Simulate an incoming call after a few seconds for demo purposes
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setIncomingCall(true);
-    }, 3000);
-    return () => clearTimeout(timer);
-  }, []);
+  if (loading)
+    return <div className="p-8 text-center">Loading dashboard...</div>;
 
   return (
     <div className="space-y-6 relative">
@@ -71,7 +91,7 @@ export default function PatientDashboard() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-primary">
-            Hello, {currentUser.name} 👋
+            Hello, {user?.name} 👋
           </h1>
           <p className="text-muted-foreground">
             Here is your health overview for today.
@@ -106,7 +126,6 @@ export default function PatientDashboard() {
                 <div className="text-2xl font-bold">
                   {nextAppointment.day || "Today"}
                 </div>
-                {/* Note: I didn't add day to Appointment type, assuming date string. Let's fix. */}
                 <div className="text-xl font-bold">
                   {new Date(nextAppointment.date).toLocaleDateString("en-US", {
                     weekday: "short",
