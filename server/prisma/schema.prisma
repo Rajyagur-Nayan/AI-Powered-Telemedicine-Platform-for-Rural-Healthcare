@@ -121,6 +121,7 @@ model MedicalRecord {
 
   title       String
   description String?
+  fileUrl     String?  // URL of the uploaded file (image/pdf)
   date        DateTime @default(now())
 }
 

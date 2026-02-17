@@ -1,6 +1,8 @@
 import express from "express";
 import prisma from "../lib/prisma.js";
 import { isLogin } from "../middlewear/auth.accessToken.js";
+import { upload } from "../middlewear/multer.middleware.js";
+import { uploadOnCloudinary } from "../utils/cloudinary.js";
 
 const medicalRecordRoutes = express.Router();
 
@@ -28,7 +30,7 @@ POST /api/medical-records
  *     requestBody:
  *       required: true
  *       content:
- *         application/json:
+ *         multipart/form-data:
  *           schema:
  *             type: object
  *             required:
@@ -36,7 +38,6 @@ POST /api/medical-records
  *             properties:
  *               patientId:
  *                 type: integer
- *                 description: Required if doctor is creating record
  *               title:
  *                 type: string
  *               description:
@@ -44,6 +45,9 @@ POST /api/medical-records
  *               date:
  *                 type: string
  *                 format: date-time
+ *               file:
+ *                 type: string
+ *                 format: binary
  *     responses:
  *       201:
  *         description: Medical record created successfully
@@ -54,59 +58,73 @@ POST /api/medical-records
  *       500:
  *         description: Server error
  */
-medicalRecordRoutes.post("/", isLogin, async (req, res) => {
-  try {
-    const { patientId, title, description, date } = req.body;
-    const userId = req.user.id;
-    const role = req.user.role;
+medicalRecordRoutes.post(
+  "/",
+  isLogin,
+  upload.single("file"),
+  async (req, res) => {
+    try {
+      const { patientId, title, description, date } = req.body;
+      const userId = req.user.id;
+      const role = req.user.role;
+      const file = req.file;
 
-    let targetPatientId;
+      let targetPatientId;
 
-    if (role === "PATIENT") {
-      const patientProfile = await prisma.patientProfile.findUnique({
-        where: { userId },
+      if (role === "PATIENT") {
+        const patientProfile = await prisma.patientProfile.findUnique({
+          where: { userId },
+        });
+        if (!patientProfile)
+          return res.status(404).json({ message: "Patient profile not found" });
+        targetPatientId = patientProfile.id;
+      } else if (role === "DOCTOR") {
+        if (!patientId)
+          return res
+            .status(400)
+            .json({ message: "Patient ID is required for doctors" });
+        const patientProfile = await prisma.patientProfile.findUnique({
+          where: { userId: parseInt(patientId) },
+        });
+        if (!patientProfile)
+          return res.status(404).json({ message: "Patient profile not found" });
+        targetPatientId = patientProfile.id;
+      } else {
+        return res.status(403).json({ message: "Unauthorized" });
+      }
+
+      if (!title) {
+        return res.status(400).json({ message: "Title is required" });
+      }
+
+      let fileUrl = "";
+      if (file) {
+        const uploadedFile = await uploadOnCloudinary(file.path);
+        if (uploadedFile) {
+          fileUrl = uploadedFile;
+        }
+      }
+
+      const record = await prisma.medicalRecord.create({
+        data: {
+          patientId: targetPatientId,
+          title,
+          description,
+          fileUrl: fileUrl || null,
+          date: date ? new Date(date) : new Date(),
+        },
       });
-      if (!patientProfile)
-        return res.status(404).json({ message: "Patient profile not found" });
-      targetPatientId = patientProfile.id;
-    } else if (role === "DOCTOR") {
-      if (!patientId)
-        return res
-          .status(400)
-          .json({ message: "Patient ID is required for doctors" });
-      // Verify patient exists
-      const patientProfile = await prisma.patientProfile.findUnique({
-        where: { userId: parseInt(patientId) },
+
+      res.status(201).json({
+        message: "Medical record created",
+        record,
       });
-      if (!patientProfile)
-        return res.status(404).json({ message: "Patient profile not found" });
-      targetPatientId = patientProfile.id;
-    } else {
-      return res.status(403).json({ message: "Unauthorized" });
+    } catch (error) {
+      console.error("Create Medical Record Error:", error);
+      res.status(500).json({ message: "Internal server error" });
     }
-
-    if (!title) {
-      return res.status(400).json({ message: "Title is required" });
-    }
-
-    const record = await prisma.medicalRecord.create({
-      data: {
-        patientId: targetPatientId,
-        title,
-        description,
-        date: date ? new Date(date) : new Date(),
-      },
-    });
-
-    res.status(201).json({
-      message: "Medical record created",
-      record,
-    });
-  } catch (error) {
-    console.error("Create Medical Record Error:", error);
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
+  },
+);
 
 /*
 =================================
@@ -127,7 +145,6 @@ GET /api/medical-records
  *         name: patientId
  *         schema:
  *           type: integer
- *         description: Optional patient ID for doctors to view specific patient records
  *     responses:
  *       200:
  *         description: List of medical records
@@ -165,7 +182,6 @@ medicalRecordRoutes.get("/", isLogin, async (req, res) => {
           orderBy: { date: "desc" },
         });
       } else {
-        // Return empty or maybe all records? For now empty if no patient specified.
         return res.status(200).json([]);
       }
     }
