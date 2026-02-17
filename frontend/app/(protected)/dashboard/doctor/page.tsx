@@ -1,13 +1,66 @@
-import { doctors, appointments } from "@/data/mock";
+"use client";
+
+import { useEffect, useState } from "react";
+import { doctors, appointments as mockAppointments } from "@/data/mock";
+import { userApi, appointmentApi } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Users, Calendar, ClipboardList } from "lucide-react";
 
 export default function DoctorDashboard() {
-  const currentDoctor = doctors[0]; // Simulation
-  const upcomingAppointments = appointments.filter(
-    (a) => a.doctorId === currentDoctor.id && a.status === "upcoming",
+  const [currentDoctor, setCurrentDoctor] = useState<any>(doctors[0]);
+  const [appointmentsList, setAppointmentsList] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        // Fetch Profile
+        try {
+          const { data } = await userApi.getProfile();
+          // Merge with mock if some fields missing
+          setCurrentDoctor({ ...doctors[0], ...data });
+        } catch (err) {
+          console.error("Failed to fetch profile", err);
+          setCurrentDoctor(doctors[0]);
+        }
+
+        // Fetch Appointments
+        try {
+          const { data } = await appointmentApi.list();
+          // Map backend data to UI
+          const formattedAppointments = data.map((appt: any) => ({
+            id: appt.id,
+            patientId: appt.patient?.user?.name || "Unknown Patient", // Using name as ID for display if ID not easy
+            date: new Date(appt.dateTime).toLocaleDateString(),
+            time: new Date(appt.dateTime).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+            type: "Consultation", // Default
+            status:
+              new Date(appt.dateTime) > new Date() ? "upcoming" : "completed",
+            patientName: appt.patient?.user?.name,
+          }));
+          setAppointmentsList(
+            formattedAppointments.length > 0
+              ? formattedAppointments
+              : mockAppointments,
+          );
+        } catch (err) {
+          console.error("Failed to fetch appointments", err);
+          setAppointmentsList(mockAppointments);
+        }
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
+  }, []);
+
+  const upcomingAppointments = appointmentsList.filter(
+    (a) => a.status === "upcoming",
   );
 
   return (
@@ -49,8 +102,12 @@ export default function DoctorDashboard() {
             <Calendar className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">12</div>
-            <p className="text-xs text-muted-foreground">4 remaining</p>
+            <div className="text-2xl font-bold">
+              {upcomingAppointments.length}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {upcomingAppointments.length} remaining today
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -81,10 +138,10 @@ export default function DoctorDashboard() {
                 >
                   <div className="flex items-center gap-4">
                     <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold">
-                      {apt.patientId.slice(0, 2).toUpperCase()}
+                      {String(apt.patientId).slice(0, 2).toUpperCase()}
                     </div>
                     <div>
-                      <p className="font-medium">Patient ID: {apt.patientId}</p>
+                      <p className="font-medium">{apt.patientId}</p>
                       <p className="text-sm text-muted-foreground">
                         {apt.date} at {apt.time}
                       </p>

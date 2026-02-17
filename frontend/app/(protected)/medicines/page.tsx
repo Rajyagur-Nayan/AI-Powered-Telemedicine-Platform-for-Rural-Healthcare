@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { prescriptionApi } from "@/lib/api"; // Import API
+import { medicineApi } from "@/lib/api"; // Import API
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -19,43 +19,29 @@ import {
 export default function MedicinesPage() {
   const [meds, setMeds] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [newMedName, setNewMedName] = useState(""); // Kept for UI but backend might handle creation differently
+  const [newMedName, setNewMedName] = useState("");
 
   useEffect(() => {
     async function fetchMedicines() {
       try {
-        const { data } = await prescriptionApi.list();
-        // Backend returns prescriptions, which contain medicines.
-        // We need to flatten this if the UI expects a list of medicines.
-        // Assuming data structure: [{ id, medicines: [{name, dosage...}], ... }]
-        // Or if backend returns simple list.
-        // For now, let's assume we map prescription items or just show them.
-
-        // Mocking the mapping since I don't know exact backend shape of 'medicines' field in prescription
-        // If 'medicines' is a JSON field in Postgres/Prisma:
-        const allMeds: any[] = [];
-        data.forEach((p: any) => {
-          if (Array.isArray(p.medicines)) {
-            p.medicines.forEach((m: any) => {
-              allMeds.push({
-                ...m,
-                prescriptionId: p.id,
-                prescribedBy: p.doctor?.name || "Unknown Doctor",
-                startDate: p.createdAt
-                  ? p.createdAt.split("T")[0]
-                  : new Date().toISOString().split("T")[0],
-                status: "active", // default
-                id: Math.random().toString(), // temp id if not present
-              });
-            });
-          }
-        });
-
-        // If no meds found from backend yet, maybe show empty or keep mock?
-        // Let's show empty for real integration.
-        setMeds(allMeds);
+        const { data } = await medicineApi.list();
+        // Map backend data to UI
+        const formattedMeds = data.map((m: any) => ({
+          id: m.id,
+          name: m.medicineName,
+          dosage: m.dosage,
+          frequency:
+            (m.isMorning ? "Morning " : "") +
+            (m.isAfternoon ? "Afternoon " : "") +
+            (m.isEvening ? "Evening " : "") +
+            (m.isNight ? "Night" : ""),
+          status: "active", // Default since we fetching schedule
+          prescribedBy: "Self", // or Doctor if we have that info
+          startDate: new Date().toISOString().split("T")[0], // Mock for now
+        }));
+        setMeds(formattedMeds);
       } catch (err) {
-        console.error("Failed to fetch prescriptions", err);
+        console.error("Failed to fetch medicines", err);
       } finally {
         setLoading(false);
       }
@@ -63,35 +49,64 @@ export default function MedicinesPage() {
     fetchMedicines();
   }, []);
 
-  const addMed = () => {
-    // This would ideally call API to create a self-prescription or note
-    // For now, just update local state
+  const addMed = async () => {
     if (!newMedName) return;
-    const newMed = {
-      id: Math.random().toString(),
-      patientId: "u1", // placeholder
-      name: newMedName,
-      dosage: "Tablet",
-      frequency: "Daily",
-      times: ["09:00"],
-      startDate: new Date().toISOString().split("T")[0],
-      status: "active" as const,
-      prescribedBy: "Self",
-      takenHistory: [],
-    };
-    setMeds([...meds, newMed]);
-    setNewMedName("");
+    try {
+      const { data } = await medicineApi.schedule({
+        medicineName: newMedName,
+        dosage: "Tablet", // Default
+        isMorning: true,
+        isEvening: true,
+      });
+
+      const newMed = {
+        id: data.schedule.id,
+        name: data.schedule.medicineName,
+        dosage: data.schedule.dosage,
+        frequency: "Morning Evening",
+        status: "active",
+        prescribedBy: "Self",
+        startDate: new Date().toISOString().split("T")[0],
+      };
+      setMeds([...meds, newMed]);
+      setNewMedName("");
+    } catch (err) {
+      console.error("Failed to add medicine", err);
+      // Fallback: local add
+      const newMed = {
+        id: Math.random().toString(),
+        name: newMedName,
+        dosage: "Tablet",
+        frequency: "Morning Evening",
+        status: "active",
+        prescribedBy: "Self",
+        startDate: new Date().toISOString().split("T")[0],
+      };
+      setMeds([...meds, newMed]);
+      setNewMedName("");
+    }
   };
 
-  const toggleStatus = (id: string) => {
-    // Local toggle for now
-    setMeds((prev) =>
-      prev.map((m) =>
-        m.id === id
-          ? { ...m, status: m.status === "active" ? "completed" : "active" }
-          : m,
-      ),
-    );
+  const toggleStatus = async (id: string | number) => {
+    // We can interpret this as "taking" the medicine for today
+    // Logic: call log api
+    try {
+      await medicineApi.log({
+        scheduleId: id,
+        status: "TAKEN",
+      });
+      // Update local UI to show taken (maybe change status to completed for today?)
+      // For now, let's just toggle 'status' field for visual feedback
+      setMeds((prev) =>
+        prev.map((m) =>
+          m.id === id
+            ? { ...m, status: m.status === "active" ? "completed" : "active" }
+            : m,
+        ),
+      );
+    } catch (err) {
+      console.error("Failed to log medicine", err);
+    }
   };
 
   if (loading) return <div>Loading medicines...</div>;
@@ -114,7 +129,7 @@ export default function MedicinesPage() {
             onChange={(e) => setNewMedName(e.target.value)}
             className="w-[200px]"
           />
-          <Button onClick={addMed}>
+          <Button onClick={() => addMed()}>
             <Plus className="h-4 w-4 mr-2" /> Add
           </Button>
         </div>

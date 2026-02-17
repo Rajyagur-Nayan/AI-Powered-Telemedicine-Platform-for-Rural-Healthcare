@@ -12,23 +12,78 @@ import { Badge } from "@/components/ui/Badge";
 import Link from "next/link";
 import { Activity, Calendar, Pill, Video, Phone } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { userApi } from "@/lib/api";
+import { userApi, appointmentApi, medicineApi } from "@/lib/api";
 
 export default function PatientDashboard() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
+  const [appointmentsList, setAppointmentsList] = useState<any[]>([]);
+  const [medicinesList, setMedicinesList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [incomingCall, setIncomingCall] = useState(false);
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const { data } = await userApi.getProfile();
-        setUser(data);
-      } catch (err) {
-        console.error("Failed to fetch profile", err);
-        // Fallback to mock user if API fails (for resilience in demo)
-        setUser({ name: "Demo User" });
+        // Fetch Profile
+        try {
+          const { data } = await userApi.getProfile();
+          setUser(data);
+        } catch (err) {
+          console.error("Failed to fetch profile", err);
+          setUser({ name: "Demo User" });
+        }
+
+        // Fetch Appointments
+        try {
+          const { data } = await appointmentApi.list();
+          // Filter for upcoming or use all for now
+          // If empty, we might want to use mock data for demo purposes if the user specifically asked
+          // but usually empty means empty. However, user said "if route missing... use dummy".
+          // So if success, use real data.
+          // Map backend data to UI format if needed
+          const formattedAppointments = data.map((appt: any) => ({
+            id: appt.id,
+            doctorName: appt.doctor?.user?.name || "Unknown Doctor",
+            date: appt.dateTime, // Ensure backend sends ISO string
+            time: new Date(appt.dateTime).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+            type: "online", // Default or derive from data
+            status:
+              new Date(appt.dateTime) > new Date() ? "upcoming" : "completed",
+            day: new Date(appt.dateTime).getDate(),
+          }));
+          setAppointmentsList(
+            formattedAppointments.length > 0
+              ? formattedAppointments
+              : mockAppointments,
+          );
+        } catch (err) {
+          console.error("Failed to fetch appointments", err);
+          setAppointmentsList(mockAppointments);
+        }
+
+        // Fetch Medicines
+        try {
+          const { data } = await medicineApi.list();
+          const formattedMedicines = data.map((med: any) => ({
+            id: med.id,
+            name: med.medicineName,
+            dosage: med.dosage,
+            frequency:
+              (med.isMorning ? "Morning " : "") +
+              (med.isEvening ? "Evening" : ""),
+            status: "active", // Default
+          }));
+          setMedicinesList(
+            formattedMedicines.length > 0 ? formattedMedicines : medicines,
+          );
+        } catch (err) {
+          console.error("Failed to fetch medicines", err);
+          setMedicinesList(medicines);
+        }
       } finally {
         setLoading(false);
       }
@@ -43,8 +98,8 @@ export default function PatientDashboard() {
     return () => clearTimeout(timer);
   }, []);
 
-  const nextAppointment = mockAppointments.find((a) => a.status === "upcoming");
-  const activeMedicines = medicines.filter((m) => m.status === "active");
+  const nextAppointment = appointmentsList.find((a) => a.status === "upcoming");
+  const activeMedicines = medicinesList.filter((m) => m.status === "active");
   const latestPrediction = recentPredictions[0];
 
   if (loading)

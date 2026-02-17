@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -41,11 +43,11 @@ export default function SignupPage() {
         name: `${formData.firstName} ${formData.lastName}`.trim(),
         email: formData.email,
         password: formData.password,
-        role: "PATIENT", // Hardcoded for simplified signup flow, generic user is patient
+        role: formData.role,
       });
 
-      localStorage.setItem("userRole", "patient");
-      router.push("/dashboard/patient");
+      localStorage.setItem("userRole", formData.role.toLowerCase());
+      router.push(`/dashboard/${formData.role.toLowerCase()}`);
     } catch (err: any) {
       console.error(err);
       setError(err.response?.data?.message || "Signup failed");
@@ -102,6 +104,25 @@ export default function SignupPage() {
             required
             onChange={handleChange}
           />
+          <div className="space-y-2">
+            <label className="text-sm font-medium">I am a...</label>
+            <div className="grid grid-cols-2 gap-2">
+              {["PATIENT", "DOCTOR"].map((r) => (
+                <div
+                  key={r}
+                  onClick={() => setFormData({ ...formData, role: r })}
+                  className={`cursor-pointer text-center py-2 rounded-md border text-sm capitalize transition-all ${
+                    formData.role === r
+                      ? "bg-primary text-white border-primary"
+                      : "bg-white hover:bg-slate-50"
+                  }`}
+                >
+                  {r.toLowerCase()}
+                </div>
+              ))}
+            </div>
+          </div>
+
           <Input
             name="confirmPassword"
             placeholder="Confirm Password"

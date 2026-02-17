@@ -64,6 +64,9 @@ medicalRecordRoutes.post(
   upload.single("file"),
   async (req, res) => {
     try {
+      console.log("Upload Request Body:", req.body);
+      console.log("Upload Request File:", req.file);
+      console.log("Upload Request User:", req.user);
       const { patientId, title, description, date } = req.body;
       const userId = req.user.id;
       const role = req.user.role;
